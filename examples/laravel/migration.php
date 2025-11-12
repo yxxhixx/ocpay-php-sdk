@@ -18,14 +18,22 @@ return new class extends Migration
         Schema::table('orders', function (Blueprint $table) {
             $table->string('payment_ref')->nullable()->after('status');
             $table->text('payment_url')->nullable()->after('payment_ref');
-            $table->timestamp('paid_at')->nullable()->after('payment_ref');
+            $table->timestamp('payment_link_created_at')->nullable()->after('payment_url');
+            $table->timestamp('paid_at')->nullable()->after('payment_link_created_at');
+            $table->string('payment_failed_reason')->nullable()->after('paid_at');
         });
     }
 
     public function down(): void
     {
         Schema::table('orders', function (Blueprint $table) {
-            $table->dropColumn(['payment_ref', 'payment_url', 'paid_at']);
+            $table->dropColumn([
+                'payment_ref',
+                'payment_url',
+                'payment_link_created_at',
+                'paid_at',
+                'payment_failed_reason'
+            ]);
         });
     }
 };

@@ -29,20 +29,70 @@ class ProductInfo
     private function validate(): void
     {
         if (empty($this->title) || strlen($this->title) > 200) {
-            throw new \InvalidArgumentException('Title must be between 1 and 200 characters');
+            throw new \InvalidArgumentException(
+                sprintf('Title must be between 1 and 200 characters, got %d', strlen($this->title))
+            );
         }
 
         if ($this->description !== null && strlen($this->description) > 1000) {
-            throw new \InvalidArgumentException('Description must not exceed 1000 characters');
+            throw new \InvalidArgumentException(
+                sprintf('Description must not exceed 1000 characters, got %d', strlen($this->description))
+            );
         }
 
-        if ($this->amount < 500 || $this->amount > 500000) {
-            throw new \InvalidArgumentException('Amount must be between 500 and 500,000 DZD');
-        }
-
+        // Check if amount is a whole number (no decimals)
+        // Since amount is typed as int, this check is redundant but kept for clarity
         if ($this->amount !== (int) $this->amount) {
-            throw new \InvalidArgumentException('Amount must be a whole number (no decimals)');
+            throw new \InvalidArgumentException(
+                sprintf('Amount must be a whole number (no decimals). Got: %s', (string) $this->amount)
+            );
         }
+
+        // Validate amount range with clear error messages
+        if ($this->amount < 500) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Amount must be at least 500 DZD. Got: %d DZD. Please ensure your order total meets the minimum payment requirement.',
+                    $this->amount
+                )
+            );
+        }
+
+        if ($this->amount > 500000) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Amount must not exceed 500,000 DZD. Got: %d DZD. Please split large orders into multiple payments.',
+                    $this->amount
+                )
+            );
+        }
+    }
+
+    /**
+     * Create ProductInfo from a decimal amount (e.g., from database)
+     * Automatically rounds to nearest whole number
+     *
+     * @param string $title
+     * @param float|int|string $amount Decimal amount (will be rounded)
+     * @param string|null $description
+     * @return self
+     * @throws \InvalidArgumentException
+     */
+    public static function fromDecimalAmount(
+        string $title,
+        float|int|string $amount,
+        ?string $description = null
+    ): self {
+        $amountFloat = (float) $amount;
+        $amountInt = (int) round($amountFloat);
+
+        // Warn if rounding occurred
+        if (abs($amountFloat - $amountInt) > 0.01) {
+            // Log warning but allow it (rounding is acceptable)
+            // In production, you might want to log this
+        }
+
+        return new self($title, $amountInt, $description);
     }
 
     /**

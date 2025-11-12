@@ -466,15 +466,54 @@ Schedule in `app/Console/Kernel.php`:
 protected function schedule(Schedule $schedule): void
 {
     // Check pending payments every 5 minutes
+    // Only check orders from last 24 hours (payment links expire in 20 minutes)
     $schedule->call(function () {
         Order::where('status', 'pending_payment')
             ->where('created_at', '>', now()->subHours(24))
+            ->where(function ($query) {
+                // Only check if payment link hasn't expired (20 minutes)
+                $query->whereNull('payment_link_created_at')
+                    ->orWhere('payment_link_created_at', '>', now()->subMinutes(20));
+            })
             ->each(function ($order) {
-                CheckPaymentStatus::dispatch($order);
+                CheckPaymentStatus::dispatch($order)->onQueue('payments');
             });
-    })->everyFiveMinutes();
+    })->everyFiveMinutes()
+      ->withoutOverlapping() // Prevent overlapping executions
+      ->runInBackground(); // Run in background to avoid blocking
 }
 ```
+
+**Important Configuration:**
+
+1. **Queue Worker**: Ensure queue workers are running:
+   ```bash
+   php artisan queue:work --queue=payments --tries=3 --timeout=30
+   ```
+
+2. **Supervisor Configuration** (for production):
+   ```ini
+   [program:laravel-worker]
+   process_name=%(program_name)s_%(process_num)02d
+   command=php /path/to/artisan queue:work --queue=payments --sleep=3 --tries=3 --max-time=3600
+   autostart=true
+   autorestart=true
+   user=www-data
+   numprocs=2
+   redirect_stderr=true
+   stdout_logfile=/path/to/worker.log
+   ```
+
+3. **Timezone**: Ensure your application timezone is set correctly in `config/app.php`:
+   ```php
+   'timezone' => 'Africa/Algiers', // Or your timezone
+   ```
+
+4. **Job Retries**: The job is configured with:
+   - 3 retry attempts
+   - Exponential backoff (60s, 120s, 240s)
+   - 30 second timeout
+   - Proper error logging
 
 ## Error Handling
 
@@ -558,15 +597,27 @@ class PaymentTest extends TestCase
 }
 ```
 
+## Important Notes & Edge Cases
+
+⚠️ **Critical:** See [IMPORTANT_NOTES.md](IMPORTANT_NOTES.md) for detailed information about:
+
+- **Payment Amount Validation** - Handling fractional amounts and range limits
+- **Payment Link Expiry** - 20 minute expiry handling
+- **Background Job Processing** - Retries, timeouts, and error recovery
+- **Production Checklist** - Essential configuration for production
+
 ## Best Practices
 
 1. **Always verify payment on backend** - Never trust frontend payment status
 2. **Store payment reference** - Save `paymentRef` with your order
-3. **Handle webhooks** - If available, use webhooks instead of polling
-4. **Set timeouts** - Payment links expire in 20 minutes
-5. **Log errors** - Always log payment API errors for debugging
-6. **Use queues** - Use background jobs for payment status checking
-7. **Validate amounts** - Always verify payment amount matches order total
+3. **Track expiry time** - Store `payment_link_created_at` to check expiry
+4. **Handle webhooks** - If available, use webhooks instead of polling
+5. **Set timeouts** - Payment links expire in 20 minutes
+6. **Log errors** - Always log payment API errors for debugging
+7. **Use queues** - Use background jobs for payment status checking
+8. **Validate amounts** - Always verify payment amount matches order total
+9. **Configure retries** - Set up proper retry mechanism for failed jobs
+10. **Monitor queues** - Ensure queue workers are running and monitored
 
 ## Support
 
